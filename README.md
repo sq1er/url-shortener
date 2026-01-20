@@ -1,213 +1,217 @@
 # URL Shortener
 
-Сервис для сокращения ссылок на Go используюзий (GORM + Postgres). Проект содержит HTTP-хендлеры, сервисы и репозитории, JWT-аутентификацию, простой eventbus для асинхронной статистики и набор тестов (unit + интеграционные сценарии).
+Сервис для сокращения ссылок на **Go** с использованием GORM + PostgreSQL. Проект включает HTTP-хендлеры, службы и репозитории, JWT-аутентификацию, простой event-bus для асинхронной статистики и тесты (unit + интеграционные сценарии).
 
 ---
 
-## Основные возможности
+## Содержание <!-- TOC -->
 
-- Регистрация / Вход (JWT)
-- Создание / Обновление / Удаление коротких ссылок
+- [Быстрый старт](#быстрый-старт)
+- [Возможности](#возможности)
+- [Стек технологий](#стек-технологий)
+- [Структура проекта](#структура-проекта)
+- [Требования](#требования)
+- [Переменные окружения](#переменные-окружения)
+- [Docker Compose (Postgres)](#docker-compose-postgres)
+- [Запуск приложения](#запуск-приложения)
+- [Тесты](#тесты)
+- [API](#api)
+- [БД и миграции](#бд-и-миграции)
+- [Реализация и безопасность](#реализация-и-безопасность)
+- [Дальнейшие планы](#дальнейшие-планы)
+- [Вклад и автор](#вклад-и-автор)
+
+---
+
+Сервис для сокращения ссылок на **Go** с использованием GORM + PostgreSQL.  
+Проект включает HTTP-хендлеры, сервисы и репозитории, JWT-аутентификацию, простой event-bus для асинхронной статистики и набор тестов (unit + интеграционные сценарии).
+
+---
+
+## 0. Установка и клонирование репозитория
+
+Клонируйте репозиторий и перейдите в каталог проекта:
+
+```bash
+git clone https://github.com/sq1er/url-shortener
+cd url-shortener
+```
+
+---
+
+## 1. Возможности
+
+- Регистрация и вход пользователей (JWT)
+- Создание / обновление / удаление коротких ссылок
 - Редирект по хэшу (`GET /{hash}`)
-- Базовая агрегация статистики (по дням / месяцам)
+- Сбор и агрегация статистики (по дням / месяцам)
 - Middleware: CORS, логирование, авторизация
-- Модели GORM + `AutoMigrate` для разработки
-- Тесты: e2e, `sqlmock`, интеграционные и unit тесты
+- GORM модели + `AutoMigrate`
+- Тесты: unit, sqlmock, e2e и интеграционные
 
 ---
 
-## Структура репозитория
+## 2. Стек технологий
+
+- **Язык:** Go 1.24+
+- **БД:** PostgreSQL
+- **ORM:** GORM
+- **Аутентификация:** JWT
+- **Асинхронность:** внутренняя шина событий (channels)
+- **Инфраструктура:** Docker / Docker Compose
+
+---
+
+## 3. Структура проекта
 
 ```
-cmd/               -> точка входа (сервер)
+cmd/               -> точка входа (HTTP-сервер)
 configs/           -> загрузка конфигурации
 internal/          -> доменные модули (auth, link, stat, user)
-pkg/               -> инфраструктурные/общие пакеты (db, jwt, middleware, req, res, event)
-migrations/        -> миграции
-Docker-compose.yml -> Postgres
+pkg/               -> общие и инфраструктурные пакеты (db, jwt, middleware, event)
+migrations/        -> миграции / AutoMigrate
+docker-compose.yml -> Postgres
 ```
 
-`internal/*` разделён по модулям и придерживается паттерна handler -> service -> repository.
+`internal/*` организован по паттерну: **handler → service → repository**.
 
 ---
 
-## Требования
+## 4. Требования
 
 - Go 1.24+
-- Docker (опционально, для Postgres)
-- Доступ в интернет для скачивания модулей (GOPROXY)
+- Docker (опционально, для запуска Postgres)
+- Интернет-доступ для загрузки Go-модулей
 
 ---
 
-## Переменные окружения (пример .env)
+## 5. Переменные окружения
 
-Создайте файл `.env` в корне проекта (или в `cmd/` для тестов) с содержимым:
+Создайте файл `.env` в корне проекта:
 
 ```env
-# Пример — не храните реальные секреты в публичных репозиториях
 DSN="host=localhost user=postgres password=my_pass dbname=link port=5432 sslmode=disable"
 SECRET="your_jwt_secret_here"
 ```
 
-> Для тестов используется база `link_test` — укажите соответствующий `DSN` при запуске тестов.
+> Для тестов используется база `link_test`.
 
 ---
 
-## Быстрый старт (с Docker Postgres)
+## 6. Docker Compose (Postgres)
 
-1. Запустить Postgres через Docker Compose (в проекте есть `docker-compose.yml`):
+```yaml
+services:
+  postgres:
+	container_name: postgres_go
+	image: postgres
+	environment:
+	  POSTGRES_USER: postgres
+	  POSTGRES_PASSWORD: my_pass
+	  PGDATA: /data/postgres
+	volumes:
+	  - ./postgres-data:/data/postgres
+	ports:
+	  - "5432:5432"
+```
+
+Запуск БД:
+
+```bash
+docker compose up -d
+```
+
+Создание базы данных:
 
 ```bash
 docker exec -it postgres_go psql -U postgres -c "CREATE DATABASE link;"
 ```
 
-2. Мигрировать схему (AutoMigrate):
+---
+
+## 7. Запуск приложения
+
+Миграция схемы (AutoMigrate):
 
 ```bash
-# выполнит миграцию моделей (links, users, stats)
 go run migrations/auto.go
 ```
 
-3. Запустить сервер:
+Запуск сервера:
 
 ```bash
 go run cmd/main.go
-# Server is listening on port 8081
 ```
 
 ---
 
-## Тесты
-
-Некоторые тесты используют `sqlmock` и не требуют реальной БД; интеграционные тесты требуют Postgres и корректного `.env`.
-
----
-
-## API
+## 8. API
 
 Все запросы и ответы в формате JSON.
 
 ### Auth
 
-- `POST /auth/register` — регистрация
+**POST /auth/register**
 
-```
-- Request:
+```json
 {
   "email": "user@mail.ru",
-  "password":"my_pass",
-  "name":"Александр"
-}
-- Response: 201
-{
-  "token": "jwt"
+  "password": "my_pass",
+  "name": "Александр"
 }
 ```
 
-- `POST /auth/login` — вход
+**POST /auth/login**
 
+```json
+{
+  "name": "Александр",
+  "password": "my_pass"
+}
 ```
-- Request:
-{
-  "name":"Александр",
-  "password":"my_pass"
-}
-- Response: 200
-{
-  "token": "jwt"
-}
+
+Ответ:
+
+```json
+{ "token": "jwt" }
 ```
 
 ### Link
 
-Защищённые эндпоинты (JWT) — кроме редиректа:
+- **POST /link** — создать ссылку (JWT)
+- **PATCH /link/{id}** — обновить ссылку
+- **DELETE /link/{id}** — удалить ссылку
+- **GET /link?limit=5&offset=0** — список ссылок
+- **GET /{hash}** — редирект на оригинальный URL
 
-- `POST /link` — создать ссылку (auth)
-
-```
-- Request:
-{
-	"url":"https://ya.ru/"
-}
-Authorization Bearer jwt
-
-- Response: 201
-{
-	"ID": 1,
-	"CreatedAt": "2026-01-15T19:19:05.5090954+03:00",
-	"UpdatedAt": "2026-01-15T19:19:05.5090954+03:00",
-	"DeletedAt": null,
-	"url": "https://ya.ru/",
-	"hash": "wyYvjO",
-	"Stats": null
-}
-```
-
-- `PATCH /link/{id}` — обновить ссылку (auth)
+Header:
 
 ```
-- Request:
-{
-  "ID": 1,
-	"url":"https://yandex.ru"
-}
-Authorization Bearer jwt
-
-- Response: 201
-{
-	"ID": 1,
-	"CreatedAt": "2026-01-15T19:53:33.204199+03:00",
-	"UpdatedAt": "2026-01-15T19:56:44.21956+03:00",
-	"DeletedAt": null,
-	"url": "http://yandex.ru",
-	"hash": "cEfbIl",
-	"Stats": null
-}
+Authorization: Bearer <jwt>
 ```
-
-- `DELETE /link/{id}` — удалить ссылку (auth)
-- `GET link?limit=5&offset=0` — список ссылок (auth)
-- `GET /{hash}` — переход по короткой ссылке. При переходе редиректится на длинную ссылку, ведется статистика переходов по каждой ссылке, когда и сколько раз были переходы
 
 ### Stat
 
-- `GET /stat?from=YYYY-MM-DD&to=YYYY-MM-DD&by=day|month` (auth)
-  - Response: `[{ "period":"2026-01-01", "sum": 10 }, ...]`
+**GET /stat?from=YYYY-MM-DD&to=YYYY-MM-DD&by=day|month**
 
-### Авторизация
+Ответ:
 
-Во всех защищённых запросах ожидается header:
-
-```
-Authorization: Bearer jwt
-```
-
-Токен — JWT, подписанный секретом из `SECRET`.
-
----
-
-## Миграции и БД
-
-Проект использует `AutoMigrate` GORM для удобства разработки.
-
-Запуск автосинхронизации схемы:
-
-```bash
-go run migrations/auto.go
+```json
+[{ "period": "2026-01-01", "sum": 10 }]
 ```
 
 ---
 
-## Дизайн и реализация
+## 9. Реализация
 
-- `internal/*` — доменные модули, каждый содержит handler/service/repository/model/payload
-- `pkg/*` — утилитарные и инфраструктурные компоненты (db, jwt, middleware, req, res, event)
-- `event.EventBus` — простая внутренняя шина на каналах для асинхронной обработки посещений ссылок
+- Асинхронный сбор статистики через `event.EventBus`
 - Пароли хранятся в виде bcrypt-хеша
-- JWT для аутентификации
+- JWT для авторизации
+- AutoMigrate для быстрой разработки
 
 ---
 
-## Автор
+## 10. Автор
 
-Если у вас есть идеи или предложения по улучшению — создайте Issue или Pull Request на GitHub.
+Учебный проект.  
+Идеи и улучшения приветствуются — создавайте Issue или Pull Request.
